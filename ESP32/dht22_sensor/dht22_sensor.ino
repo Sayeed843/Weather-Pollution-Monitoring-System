@@ -1,6 +1,6 @@
 #include "DHT.h"
 
-#define DHTPIN 4   // Temperature and humidity sensor pin
+#define DHTPIN 4   // Temperature and humidity sensor pin (ESP32 G$ Pin with 10K Resistor and 3.3V)
 #define DHTTYPE DHT22 
 
 DHT dht(DHTPIN, DHTTYPE);
