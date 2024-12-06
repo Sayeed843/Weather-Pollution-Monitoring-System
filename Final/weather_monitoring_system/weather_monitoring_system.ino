@@ -1,8 +1,9 @@
 #include "DHT.h"
 
-#define DHTPIN 4      // Temperature and Humidity Sensor Pin (10K Resistor)(ESP32 pin G4)
-#define MQ135PIN 36   // Air Quality Sensor Pin (1K Resistor)(ESP32 pin SP)
+#define DHTPIN 4         // Temperature and Humidity Sensor Pin (10K Resistor)(ESP32 pin G4)
+#define MQ135PIN 36      // Air Quality Sensor Pin (1K Resistor)(ESP32 pin SP)
 #define MQ2PIN 39        // Detection LPG, methane, smoke, and hydrogen(1k Resistor)(ESP32 pin SN)
+#define MQ4PIN 34        // Detection only methane (ESP32 pin 34)
 
 #define DHTTYPE DHT22
 
@@ -12,7 +13,16 @@ float temp;
 float hum;
 int MQ135V = 0;  // MQ135 sensor value
 int MQ2V = 0;   // MQ2 sensor value
+int MQ4V = 0;   // MQ4 sensor value
 
+// Function declarations
+void dht_sensor();
+void mq135_sensor();
+void mq2_sensor();
+void mq4_sensor();
+
+
+// main code
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -31,6 +41,7 @@ void loop() {
   Serial.println();
   mq2_sensor();
   Serial.println();
+  mq4_sensor();
   Serial.println("****************");
   delay(3000);
 
@@ -73,5 +84,13 @@ void mq2_sensor(){
 
   Serial.print("MQ2PIN Analong Value:");
   Serial.print(MQ2V);
+  Serial.println();
+}
+
+void mq4_sensor(){
+  int MQ4V = analogRead(MQ4PIN);
+
+  Serial.print("MQ4PIN Analong Value:");
+  Serial.print(MQ4V);
   Serial.println();
 }

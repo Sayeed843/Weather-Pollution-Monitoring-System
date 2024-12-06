@@ -1,4 +1,4 @@
-int MQ2Pin = 39;  // Define the analog pin for the MQ2 sensor(detect LPG, methane, smoke, and hydrogen)
+int MQ2Pin = 39;  //  Define the analog pin for the MQ2 sensor(detect LPG, methane, smoke, and hydrogen)
 int MQ2Value = 0; // Variable to store the analog reading
 
 void setup() {
