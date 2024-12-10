@@ -1,81 +1,121 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include "DHT.h"
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-#define DHTPIN 4         // Temperature and Humidity Sensor Pin (10K Resistor)(ESP32 pin G4)
-#define MQ135PIN 36      // Air Quality Sensor Pin (1K Resistor)(ESP32 pin SP)
-#define MQ2PIN 39        // Detection LPG, methane, smoke, and hydrogen(1k Resistor)(ESP32 pin SN)
-#define MQ4PIN 34        // Detection only methane (ESP32 pin 34)
-#define PPD42_PIN 25     // GPIO pin connected to PPD42's DIGITAL pin
 
+// WiFi credentials
+const char* ssid = "From Zero";
+const char* password = "xxxxx";
+const char* serverUrl = "http://192.168.216.109:8000/pollution/data/";
+
+// DHT22 Sensor Configuration
+#define DHTPIN 4          // Temperature and Humidity Sensor Pin (ESP32 pin G4)
 #define DHTTYPE DHT22
 
+// MQ Sensors Configuration
+#define MQ135PIN 36       // Air Quality Sensor Pin (ESP32 pin SP)
+#define MQ2PIN 39         // Detection LPG, methane, smoke (ESP32 pin SN)
+#define MQ4PIN 34         // Detection only methane (ESP32 pin 34)
+
+// PPD42 Sensor Configuration
+#define PPD42_PIN 25      // GPIO pin connected to PPD42's DIGITAL pin
+
+// Initialize DHT and LCD
 DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal_I2C lcd(0x27, 20, 4); // LCD with address 0x27, 20x4 size
 
+// Sensor Values
 float temp;
 float hum;
-int MQ135V = 0;   // MQ135 sensor value
-int MQ2V = 0;     // MQ2 sensor value
-int MQ4V = 0;     // MQ4 sensor value
-float dustRatio;  // Dust ratio (LPO in %)
-float dustConcentration; // Dust concentration in µg/m³
+int MQ135V = 0;
+int MQ2V = 0;
+int MQ4V = 0;
+float dustRatio;
+float dustConcentration;
 float curr_dust;
 
 unsigned long duration;
 unsigned long startTime;
 unsigned long sampleTime = 30000; // 30 seconds for dust sampling
 
-// Function declarations
+// Function Declarations
+void connect_to_wifi();
 void dht_sensor();
 void mq135_sensor();
 void mq2_sensor();
 void mq4_sensor();
 float dust_sensor();
 void display_data(float temperature, float humidity, int mq135, int mq2, int mq4, float dustConc);
+void send_data_to_server();
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Weather Pollution Monitoring...");
+
+  // Initialize DHT sensor
   dht.begin();
-  lcd.init(); // Initialize LCD
+
+  // Initialize LCD
+  lcd.init();
   lcd.backlight();
 
-  // Display system information on LCD
-  lcd.setCursor(2, 0);
-  lcd.print("Weather Pollution");
-  lcd.setCursor(2, 1);
-  lcd.print("Monitoring System");
-  lcd.setCursor(0, 2);
-  lcd.print("Frankfurt University");
-  lcd.setCursor(2, 3);
-  lcd.print("Applied Sciences");
+  // Connect to WiFi
+  connect_to_wifi();
 
-  delay(3000);
-  lcd.clear();
-
-  startTime = millis(); // Initialize sampling start time for dust sensor
+  // Initialize Dust Sensor
+  startTime = millis();
 }
 
 void loop() {
   Serial.println("****************");
-  
+
   dht_sensor();
-  Serial.println();
   mq135_sensor();
-  Serial.println();
   mq2_sensor();
-  Serial.println();
   mq4_sensor();
-  Serial.println();
-  curr_dust = dust_sensor(); // Read PPD42 sensor data
+  curr_dust = dust_sensor();
+
   Serial.println("****************");
 
   display_data(temp, hum, MQ135V, MQ2V, MQ4V, curr_dust);
+  send_data_to_server();
+
   delay(3000);
 }
 
-// Function to read DHT sensor data
+// Function to Connect to WiFi
+void connect_to_wifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.println("\nConnecting to WiFi");
+
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    lcd.print(".");
+    delay(500);
+  }
+
+  Serial.println("\nConnected to the WiFi network");
+  Serial.print("My Local ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi Connected");
+  lcd.setCursor(0, 1);
+  lcd.print("IP:");
+  lcd.print(WiFi.localIP());
+  delay(3000);
+  lcd.clear();
+}
+
+// Function to Read DHT Sensor Data
 void dht_sensor() {
   hum = dht.readHumidity();
   temp = dht.readTemperature();
@@ -94,75 +134,89 @@ void dht_sensor() {
   Serial.println("%");
 }
 
-// Function to read MQ135 sensor data
+// Function to Read MQ135 Sensor Data
 void mq135_sensor() {
   MQ135V = analogRead(MQ135PIN);
   Serial.print("MQ135 Analog Value: ");
-  Serial.print(MQ135V);
-  Serial.println();
+  Serial.println(MQ135V);
 }
 
-// Function to read MQ2 sensor data
+// Function to Read MQ2 Sensor Data
 void mq2_sensor() {
   MQ2V = analogRead(MQ2PIN);
   Serial.print("MQ2 Analog Value: ");
-  Serial.print(MQ2V);
-  Serial.println();
+  Serial.println(MQ2V);
 }
 
-// Function to read MQ4 sensor data
+// Function to Read MQ4 Sensor Data
 void mq4_sensor() {
   MQ4V = analogRead(MQ4PIN);
   Serial.print("MQ4 Analog Value: ");
-  Serial.print(MQ4V);
-  Serial.println();
+  Serial.println(MQ4V);
 }
 
+// Function to Read Dust Sensor Data
 float dust_sensor() {
   static unsigned long dustStartTime = millis();
   static unsigned long dustDuration = 0;
-  static bool dustSampling = true;
 
-  // Check if we're in the sampling period
-  if (dustSampling) {
-    if (millis() - dustStartTime < sampleTime) {
-      // Accumulate pulse duration during LOW periods
-      dustDuration += pulseIn(PPD42_PIN, LOW);
-    } else {
-      // End of sampling, calculate dust concentration
-      dustSampling = false;
-
-      // Calculate the ratio of LOW pulse time to the total sampling time
-      dustRatio = dustDuration / (sampleTime * 10.0); // Normalize ratio
-      dustConcentration = 1.1 * pow(dustRatio, 3) - 3.8 * pow(dustRatio, 2) + 520 * dustRatio + 0.62;
-
-      Serial.print("Low Pulse Occupancy (LPO): ");
-      Serial.println(dustRatio * 100, 2); // LPO in %
-      Serial.print("Dust Concentration: ");
-      Serial.print(dustConcentration, 2);
-      Serial.println(" µg/m³");
-
-      // Reset variables for the next sampling period
-      dustStartTime = millis();
-      dustDuration = 0;
-    }
+  if (millis() - dustStartTime < sampleTime) {
+    dustDuration += pulseIn(PPD42_PIN, LOW);
   } else {
-    // Ready for the next sampling period
-    if (millis() - dustStartTime > sampleTime) {
-      dustSampling = true; // Restart sampling
-    }
+    dustRatio = dustDuration / (sampleTime * 10.0);
+    dustConcentration = 1.1 * pow(dustRatio, 3) - 3.8 * pow(dustRatio, 2) + 520 * dustRatio + 0.62;
+
+    Serial.print("Dust Concentration: ");
+    Serial.print(dustConcentration, 2);
+    Serial.println(" µg/m³");
+
+    dustStartTime = millis();
+    dustDuration = 0;
   }
 
   return dustConcentration;
 }
 
+// Function to Send Data to the Server
+void send_data_to_server() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/json");
 
+    // Create JSON payload
+    StaticJsonDocument<256> jsonDoc;
+    jsonDoc["temperature"] = temp;
+    jsonDoc["humidity"] = hum;
+    jsonDoc["air_quality"] = MQ135V;
+    jsonDoc["gas_mq2"] = MQ2V;
+    jsonDoc["gas_mq4"] = MQ4V;
+    jsonDoc["dust"] = curr_dust;
 
-// Function to display data on the LCD
+    String payload;
+    serializeJson(jsonDoc, payload);
+
+    int httpResponseCode = http.POST(payload);
+
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+      Serial.println(httpResponseCode);
+      Serial.println(response);
+    } else {
+      Serial.print("Error on sending POST: ");
+      Serial.println(httpResponseCode);
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi Disconnected, unable to send data.");
+  }
+}
+
+// Function to Display Data on the LCD
 void display_data(float temperature, float humidity, int mq135, int mq2, int mq4, float dustConc) {
-  lcd.clear(); // Clear the screen
+  lcd.clear();
 
-  // Display temperature and humidity on the first row
   lcd.setCursor(0, 0);
   lcd.print("Temp:");
   lcd.print(temperature, 1);
@@ -170,17 +224,13 @@ void display_data(float temperature, float humidity, int mq135, int mq2, int mq4
   lcd.print(humidity, 1);
   lcd.print("%");
 
-  // Display MQ135 sensor value on the second row
   lcd.setCursor(0, 1);
   lcd.print("MQ135:");
   lcd.print(mq135);
 
-  // Display MQ2 sensor and  MQ4 sensor value on the third row
   lcd.setCursor(0, 2);
   lcd.print("MQ2:");
   lcd.print(mq2);
-
-  // Display dust concentration on the fourth row
   lcd.setCursor(11, 2);
   lcd.print("MQ4:");
   lcd.print(mq4);
